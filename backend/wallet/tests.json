@@ -1,0 +1,21 @@
+{
+  "tests": [
+    {
+      "name": "GET operations and balance",
+      "method": "GET",
+      "path": "/?user_id=default",
+      "expectedStatus": 200,
+      "expectedBody": { "balance": -4250 },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST withdraw - too small amount",
+      "method": "POST",
+      "path": "/",
+      "body": { "amount": 50, "user_id": "default" },
+      "expectedStatus": 400,
+      "expectedBody": { "error": "string" },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

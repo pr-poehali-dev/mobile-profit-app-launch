@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Icon from '@/components/ui/icon';
 import { toast } from 'sonner';
+
+const API = 'https://functions.poehali.dev/a6dda7d3-1631-487b-9890-32755c56da3a';
+const USER_ID = 'default';
 
 type TabId = 'home' | 'wallet' | 'tasks' | 'history' | 'profile' | 'support' | 'settings';
 
@@ -136,7 +139,7 @@ function HomeView({ go, balance, ops }: { go: (t: TabId) => void; balance: numbe
   );
 }
 
-function WalletView({ balance, onWithdraw }: { balance: number; onWithdraw: (n: number) => void }) {
+function WalletView({ balance, onWithdraw, goHistory }: { balance: number; onWithdraw: (n: number) => Promise<boolean>; goHistory: () => void }) {
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
   const chips = [1000, 5000, balance];
@@ -147,15 +150,16 @@ function WalletView({ balance, onWithdraw }: { balance: number; onWithdraw: (n: 
   else if (num > balance) error = 'Сумма больше доступного баланса';
   const valid = num >= MIN_WITHDRAW && num <= balance;
 
-  const submit = () => {
+  const submit = async () => {
     if (!valid || loading) return;
     setLoading(true);
-    setTimeout(() => {
-      onWithdraw(num);
+    const ok = await onWithdraw(num);
+    if (ok) {
       toast.success('Заявка на вывод создана', { description: `${fmt(num)} ₽ поступят на счёт •••• 4417` });
       setAmount('');
-      setLoading(false);
-    }, 900);
+      goHistory();
+    }
+    setLoading(false);
   };
 
   return (
@@ -407,16 +411,51 @@ const Index = () => {
   const [tab, setTab] = useState<TabId>('home');
   const [balance, setBalance] = useState(12480);
   const [ops, setOps] = useState<Op[]>(INITIAL_OPS);
+  const [loading, setLoading] = useState(true);
 
-  const handleWithdraw = (sum: number) => {
-    setBalance((b) => b - sum);
+  useEffect(() => {
+    fetch(`${API}?user_id=${USER_ID}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.operations) setOps(data.operations);
+        if (typeof data.balance === 'number') setBalance(data.balance);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleWithdraw = async (sum: number): Promise<boolean> => {
+    const res = await fetch(`${API}?user_id=${USER_ID}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: sum, bank_name: 'Тинькофф Банк', card_mask: '•••• 4417' }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      toast.error(data.error || 'Ошибка вывода');
+      return false;
+    }
+    if (typeof data.balance === 'number') setBalance(data.balance);
     const now = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
     setOps((prev) => [
       { id: Date.now(), icon: 'ArrowDownToLine', title: 'Вывод · Тинькофф', sub: now, amount: sum, up: false, day: 'Сегодня' },
       ...prev,
     ]);
-    setTab('history');
+    return true;
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl gradient-navy flex items-center justify-center">
+            <Icon name="Banknote" size={26} className="text-gold" />
+          </div>
+          <Icon name="Loader2" size={24} className="text-navy animate-spin" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex justify-center">
@@ -436,7 +475,7 @@ const Index = () => {
 
         <main className="mt-6 pb-4" key={tab}>
           {tab === 'home' && <HomeView go={setTab} balance={balance} ops={ops} />}
-          {tab === 'wallet' && <WalletView balance={balance} onWithdraw={handleWithdraw} />}
+          {tab === 'wallet' && <WalletView balance={balance} onWithdraw={handleWithdraw} goHistory={() => setTab('history')} />}
           {tab === 'tasks' && <TasksView />}
           {tab === 'history' && <HistoryView ops={ops} />}
           {tab === 'profile' && <ProfileView />}
