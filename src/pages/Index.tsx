@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
+import { toast } from 'sonner';
 
 type TabId = 'home' | 'wallet' | 'tasks' | 'history' | 'profile' | 'support' | 'settings';
+
+type Op = { id: number; icon: string; title: string; sub: string; amount: number; up: boolean; day: string };
 
 const NAV: { id: TabId; label: string; icon: string }[] = [
   { id: 'home', label: 'Главная', icon: 'LayoutGrid' },
@@ -11,7 +14,18 @@ const NAV: { id: TabId; label: string; icon: string }[] = [
   { id: 'profile', label: 'Профиль', icon: 'User' },
 ];
 
+const MIN_WITHDRAW = 100;
+
 const fmt = (n: number) => n.toLocaleString('ru-RU');
+const signed = (op: Op) => `${op.up ? '+' : '−'}${fmt(Math.abs(op.amount))} ₽`;
+
+const INITIAL_OPS: Op[] = [
+  { id: 1, icon: 'CheckCircle2', title: 'Опрос завершён', sub: '14:20', amount: 320, up: true, day: 'Сегодня' },
+  { id: 2, icon: 'Video', title: 'Просмотр обзора', sub: '11:08', amount: 80, up: true, day: 'Сегодня' },
+  { id: 3, icon: 'ArrowDownToLine', title: 'Вывод · Тинькофф', sub: '19:05', amount: 5000, up: false, day: 'Вчера' },
+  { id: 4, icon: 'Download', title: 'Установка приложения', sub: '12:30', amount: 150, up: true, day: 'Вчера' },
+  { id: 5, icon: 'Star', title: 'Отзыв в App Store', sub: '16:42', amount: 200, up: true, day: '18 июня' },
+];
 
 function Header({ onMenu, balance }: { onMenu: (t: TabId) => void; balance: number }) {
   return (
@@ -59,18 +73,14 @@ function StatCard({ icon, label, value, accent }: { icon: string; label: string;
   );
 }
 
-function HomeView({ go }: { go: (t: TabId) => void }) {
+function HomeView({ go, balance, ops }: { go: (t: TabId) => void; balance: number; ops: Op[] }) {
   const actions = [
     { icon: 'ArrowDownToLine', label: 'Вывести', tab: 'wallet' as TabId, accent: true },
     { icon: 'Target', label: 'Задания', tab: 'tasks' as TabId },
     { icon: 'Clock', label: 'История', tab: 'history' as TabId },
     { icon: 'LifeBuoy', label: 'Помощь', tab: 'support' as TabId },
   ];
-  const feed = [
-    { icon: 'CheckCircle2', title: 'Опрос завершён', sub: 'Сегодня, 14:20', amount: '+320 ₽', up: true },
-    { icon: 'ArrowDownToLine', title: 'Вывод на Тинькофф', sub: 'Вчера, 19:05', amount: '−5 000 ₽', up: false },
-    { icon: 'CheckCircle2', title: 'Установка приложения', sub: '18 июня', amount: '+150 ₽', up: true },
-  ];
+  const feed = ops.slice(0, 3);
   return (
     <div className="px-5 space-y-6">
       <div className="grid grid-cols-4 gap-2.5 -mt-7 relative z-10 animate-fade-up">
@@ -109,15 +119,15 @@ function HomeView({ go }: { go: (t: TabId) => void }) {
         </div>
         <div className="bg-card rounded-2xl card-shadow divide-y divide-border">
           {feed.map((f) => (
-            <div key={f.title} className="flex items-center gap-3 p-4">
+            <div key={f.id} className="flex items-center gap-3 p-4">
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${f.up ? 'bg-emerald-50' : 'bg-secondary'}`}>
                 <Icon name={f.icon} size={18} className={f.up ? 'text-emerald-600' : 'text-navy'} />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-foreground text-sm truncate">{f.title}</p>
-                <p className="text-muted-foreground text-[12px]">{f.sub}</p>
+                <p className="text-muted-foreground text-[12px]">{f.day}, {f.sub}</p>
               </div>
-              <span className={`font-semibold font-mono-num text-sm ${f.up ? 'text-emerald-600' : 'text-foreground'}`}>{f.amount}</span>
+              <span className={`font-semibold font-mono-num text-sm ${f.up ? 'text-emerald-600' : 'text-foreground'}`}>{signed(f)}</span>
             </div>
           ))}
         </div>
@@ -126,27 +136,54 @@ function HomeView({ go }: { go: (t: TabId) => void }) {
   );
 }
 
-function WalletView() {
+function WalletView({ balance, onWithdraw }: { balance: number; onWithdraw: (n: number) => void }) {
   const [amount, setAmount] = useState('');
-  const chips = [1000, 5000, 12480];
+  const [loading, setLoading] = useState(false);
+  const chips = [1000, 5000, balance];
+  const num = Number(amount) || 0;
+
+  let error = '';
+  if (amount !== '' && num < MIN_WITHDRAW) error = `Минимальная сумма вывода — ${MIN_WITHDRAW} ₽`;
+  else if (num > balance) error = 'Сумма больше доступного баланса';
+  const valid = num >= MIN_WITHDRAW && num <= balance;
+
+  const submit = () => {
+    if (!valid || loading) return;
+    setLoading(true);
+    setTimeout(() => {
+      onWithdraw(num);
+      toast.success('Заявка на вывод создана', { description: `${fmt(num)} ₽ поступят на счёт •••• 4417` });
+      setAmount('');
+      setLoading(false);
+    }, 900);
+  };
+
   return (
     <div className="px-5 space-y-5">
       <div className="bg-card rounded-2xl p-5 card-shadow animate-fade-up">
-        <p className="text-muted-foreground text-[13px] font-medium">Сумма вывода</p>
-        <div className="flex items-end gap-1 mt-2 border-b border-border pb-3">
+        <div className="flex items-center justify-between">
+          <p className="text-muted-foreground text-[13px] font-medium">Сумма вывода</p>
+          <p className="text-[12px] text-muted-foreground">Доступно: <span className="font-mono-num font-semibold text-foreground">{fmt(balance)} ₽</span></p>
+        </div>
+        <div className={`flex items-end gap-1 mt-2 border-b pb-3 ${error ? 'border-destructive' : 'border-border'}`}>
           <input
             value={amount}
-            onChange={(e) => setAmount(e.target.value.replace(/\D/g, ''))}
+            onChange={(e) => setAmount(e.target.value.replace(/\D/g, '').slice(0, 7))}
             placeholder="0"
             inputMode="numeric"
-            className="flex-1 text-4xl font-bold font-mono-num bg-transparent outline-none placeholder:text-muted-foreground/40"
+            className="flex-1 text-4xl font-bold font-mono-num bg-transparent outline-none placeholder:text-muted-foreground/40 min-w-0"
           />
           <span className="text-2xl font-semibold text-muted-foreground mb-1">₽</span>
         </div>
+        {error ? (
+          <p className="flex items-center gap-1.5 text-destructive text-[12px] font-medium mt-2">
+            <Icon name="AlertCircle" size={13} /> {error}
+          </p>
+        ) : null}
         <div className="flex gap-2 mt-3">
-          {chips.map((c) => (
-            <button key={c} onClick={() => setAmount(String(c))} className="flex-1 bg-secondary rounded-xl py-2 text-[13px] font-semibold text-navy font-mono-num hover:bg-secondary/70 transition-colors">
-              {fmt(c)} ₽
+          {chips.map((c, i) => (
+            <button key={i} onClick={() => setAmount(String(c))} className="flex-1 bg-secondary rounded-xl py-2 text-[13px] font-semibold text-navy font-mono-num hover:bg-secondary/70 transition-colors">
+              {i === 2 ? 'Всё' : `${fmt(c)} ₽`}
             </button>
           ))}
         </div>
@@ -163,7 +200,7 @@ function WalletView() {
           </div>
           <Icon name="Check" size={20} className="text-emerald-600" />
         </div>
-        <button className="w-full flex items-center justify-center gap-2 py-3.5 border-t border-border text-navy font-medium text-sm hover:bg-secondary/40 transition-colors rounded-b-2xl">
+        <button onClick={() => toast('Добавление счёта скоро будет доступно')} className="w-full flex items-center justify-center gap-2 py-3.5 border-t border-border text-navy font-medium text-sm hover:bg-secondary/40 transition-colors rounded-b-2xl">
           <Icon name="Plus" size={16} /> Добавить счёт
         </button>
       </div>
@@ -175,8 +212,17 @@ function WalletView() {
         </p>
       </div>
 
-      <button className="w-full gradient-gold text-navy-deep font-bold rounded-2xl py-4 glow-gold hover:opacity-95 transition-opacity animate-fade-up" style={{ animationDelay: '140ms' }}>
-        Вывести на счёт
+      <button
+        onClick={submit}
+        disabled={!valid || loading}
+        className="w-full gradient-gold text-navy-deep font-bold rounded-2xl py-4 glow-gold hover:opacity-95 transition-all disabled:opacity-40 disabled:glow-none flex items-center justify-center gap-2 animate-fade-up"
+        style={{ animationDelay: '140ms' }}
+      >
+        {loading ? (
+          <><Icon name="Loader2" size={18} className="animate-spin" /> Обработка…</>
+        ) : (
+          <>Вывести{num > 0 ? ` ${fmt(num)} ₽` : ' на счёт'}</>
+        )}
       </button>
     </div>
   );
@@ -219,42 +265,24 @@ function TasksView() {
   );
 }
 
-function HistoryView() {
-  const groups = [
-    {
-      day: 'Сегодня', items: [
-        { icon: 'CheckCircle2', title: 'Опрос о финансах', time: '14:20', amount: '+320 ₽', up: true },
-        { icon: 'Video', title: 'Просмотр обзора', time: '11:08', amount: '+80 ₽', up: true },
-      ],
-    },
-    {
-      day: 'Вчера', items: [
-        { icon: 'ArrowDownToLine', title: 'Вывод · Тинькофф', time: '19:05', amount: '−5 000 ₽', up: false },
-        { icon: 'Download', title: 'Установка приложения', time: '12:30', amount: '+150 ₽', up: true },
-      ],
-    },
-    {
-      day: '18 июня', items: [
-        { icon: 'Star', title: 'Отзыв в App Store', time: '16:42', amount: '+200 ₽', up: true },
-      ],
-    },
-  ];
+function HistoryView({ ops }: { ops: Op[] }) {
+  const days = Array.from(new Set(ops.map((o) => o.day)));
   return (
     <div className="px-5 space-y-5">
-      {groups.map((g, gi) => (
-        <div key={g.day} className="animate-fade-up" style={{ animationDelay: `${gi * 60}ms` }}>
-          <p className="text-muted-foreground text-[12px] font-semibold uppercase tracking-wide mb-2 px-1">{g.day}</p>
+      {days.map((day, gi) => (
+        <div key={day} className="animate-fade-up" style={{ animationDelay: `${gi * 60}ms` }}>
+          <p className="text-muted-foreground text-[12px] font-semibold uppercase tracking-wide mb-2 px-1">{day}</p>
           <div className="bg-card rounded-2xl card-shadow divide-y divide-border">
-            {g.items.map((f) => (
-              <div key={f.title + f.time} className="flex items-center gap-3 p-4">
+            {ops.filter((o) => o.day === day).map((f) => (
+              <div key={f.id} className="flex items-center gap-3 p-4">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${f.up ? 'bg-emerald-50' : 'bg-secondary'}`}>
                   <Icon name={f.icon} size={18} className={f.up ? 'text-emerald-600' : 'text-navy'} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-foreground text-sm truncate">{f.title}</p>
-                  <p className="text-muted-foreground text-[12px]">{f.time}</p>
+                  <p className="text-muted-foreground text-[12px]">{f.sub}</p>
                 </div>
-                <span className={`font-semibold font-mono-num text-sm ${f.up ? 'text-emerald-600' : 'text-foreground'}`}>{f.amount}</span>
+                <span className={`font-semibold font-mono-num text-sm ${f.up ? 'text-emerald-600' : 'text-foreground'}`}>{signed(f)}</span>
               </div>
             ))}
           </div>
@@ -309,7 +337,7 @@ function SupportView() {
         <Icon name="Headset" size={28} className="text-gold" />
         <p className="font-bold text-lg mt-3">Мы на связи 24/7</p>
         <p className="text-white/60 text-[13px] mt-1">Среднее время ответа — 4 минуты</p>
-        <button className="w-full mt-4 gradient-gold text-navy-deep font-semibold text-sm rounded-xl py-3 hover:opacity-95 transition-opacity">
+        <button onClick={() => toast('Чат с поддержкой скоро будет доступен')} className="w-full mt-4 gradient-gold text-navy-deep font-semibold text-sm rounded-xl py-3 hover:opacity-95 transition-opacity">
           Написать в поддержку
         </button>
       </div>
@@ -358,7 +386,7 @@ function SettingsView() {
       </div>
       <div className="bg-card rounded-2xl card-shadow divide-y divide-border animate-fade-up" style={{ animationDelay: '60ms' }}>
         {links.map((l) => (
-          <button key={l.label} className="w-full flex items-center gap-3 p-4 hover:bg-secondary/40 transition-colors first:rounded-t-2xl last:rounded-b-2xl">
+          <button key={l.label} onClick={() => toast(l.label)} className="w-full flex items-center gap-3 p-4 hover:bg-secondary/40 transition-colors first:rounded-t-2xl last:rounded-b-2xl">
             <Icon name={l.icon} size={18} className={l.danger ? 'text-destructive' : 'text-navy'} />
             <span className={`flex-1 text-left text-sm font-medium ${l.danger ? 'text-destructive' : 'text-foreground'}`}>{l.label}</span>
             {!l.danger && <Icon name="ChevronRight" size={18} className="text-muted-foreground" />}
@@ -377,7 +405,18 @@ const TITLES: Record<TabId, string> = {
 
 const Index = () => {
   const [tab, setTab] = useState<TabId>('home');
-  const balance = 12480;
+  const [balance, setBalance] = useState(12480);
+  const [ops, setOps] = useState<Op[]>(INITIAL_OPS);
+
+  const handleWithdraw = (sum: number) => {
+    setBalance((b) => b - sum);
+    const now = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    setOps((prev) => [
+      { id: Date.now(), icon: 'ArrowDownToLine', title: 'Вывод · Тинькофф', sub: now, amount: sum, up: false, day: 'Сегодня' },
+      ...prev,
+    ]);
+    setTab('history');
+  };
 
   return (
     <div className="min-h-screen bg-background flex justify-center">
@@ -396,10 +435,10 @@ const Index = () => {
         )}
 
         <main className="mt-6 pb-4" key={tab}>
-          {tab === 'home' && <HomeView go={setTab} />}
-          {tab === 'wallet' && <WalletView />}
+          {tab === 'home' && <HomeView go={setTab} balance={balance} ops={ops} />}
+          {tab === 'wallet' && <WalletView balance={balance} onWithdraw={handleWithdraw} />}
           {tab === 'tasks' && <TasksView />}
-          {tab === 'history' && <HistoryView />}
+          {tab === 'history' && <HistoryView ops={ops} />}
           {tab === 'profile' && <ProfileView />}
           {tab === 'support' && <SupportView />}
           {tab === 'settings' && <SettingsView />}
